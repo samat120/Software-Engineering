@@ -1,0 +1,247 @@
+const approver_group_code = '9df3b544-a4ba-41a5-8591-e66a28b42154'
+const accountant_group_code = '47e4dd0e-16f0-4e37-a6f7-ef1e19763835'
+
+async function search_for_applications(): Promise<boolean> {
+    const orders_amount = await Application.search()
+        .where((f, g) => g.and(
+            g.or(
+                f.__status.eq(Application.fields.__status.variants.approved),
+                f.__status.eq(Application.fields.__status.variants.approver)
+            ),
+            f.__deletedAt.eq(null)
+        ))
+        .count();
+
+    return orders_amount > 0;
+}
+
+// Событие "Ежедневный платеж" - Определение параметров 
+async function define_daily_payment_parameters(): Promise<void> {
+    // Определение дат для события "Ежедневные платежи"
+    Context.data.daily_payment_start = new Datetime()
+    const seconds_from = Context.data.daily_payment_start.getTime().hours * 3600 + Context.data.daily_payment_start.getTime().minutes * 60 + Context.data.daily_payment_start.getTime().seconds
+    Context.data.daily_payment_start = Context.data.daily_payment_start.add(new Duration(-seconds_from, 'seconds'))
+    Context.data.daily_payment_end = Context.data.daily_payment_start.addDate(0, 0, 1)
+    // Определение участников для события "Ежедневные платежи"
+    // Ищем группы по коду (approver_group_code, accountant_group_code)
+    const approver = await System.userGroups.search().size(10000).where(gr => gr.code.eq(approver_group_code)).first()
+    const accountant = await System.userGroups.search().size(10000).where(gr => gr.code.eq(accountant_group_code)).first()
+    // Добавляем участников найденных групп в участники события "Ежедневные платежи"
+    if (accountant) {
+        Context.data.daily_payment_users = await accountant!.users()
+        if (approver) {
+            Context.data.daily_payment_users = (Context.data.daily_payment_users || []).concat((await approver.users()))
+        }
+    }
+    else {
+        if (approver) {
+            Context.data.daily_payment_users = (Context.data.daily_payment_users || []).concat((await approver.users()))
+        }
+    }
+}
+
+// Таблица утверждающего - Занесение заявок 
+async function approver_table_input(): Promise<void> {
+    // Запрос всех заказов с состоянием 'approver' и не удаленных (null __deletedAt)
+    const all_orders = await Application.search()
+        .size(10000)
+        .where((f, g) => g.and(
+                g.or(
+                    f.__status.eq(Application.fields.__status.variants.approved), 
+                    f.__status.eq(Application.fields.__status.variants.approver)
+                ),
+                f.__deletedAt.eq(null)
+            ))
+        .all();
+
+    // Перебор всех заказов в обратном порядке (от последнего к первому)
+    for (let i = all_orders.length - 1; i >= 0; i--) {
+        const order = all_orders[i];
+
+        // Создаем запись в таблице payment_request_table_approver для каждого заказа
+        const payment_request_table = Context.data.payment_request_table_approver!.insert();
+        payment_request_table.daily_payment_request = order;
+        payment_request_table.currency_of_payment = order.data.currency_of_payment!;
+        payment_request_table.sum_of_payment = order.data.sum_of_payment!;
+        payment_request_table.payment_desired_date = order.data.payment_desired_date!;
+        payment_request_table.payment_request_comment = order.data.payment_request_comment!;
+        payment_request_table.payment_request_initiator = order.data.__createdBy;
+        payment_request_table.payment_reason_file = order.data.payment_reason_file!;
+        payment_request_table.contract = order.data.contract!;
+        payment_request_table.payee_partner_fix = order.data.payee_partner!;
+    }
+}
+
+// Заявки на оплату - Смена статусов
+async function change_approvement_statuses(): Promise<void> {
+    for (let i = Context.data.cash_request_table_approver!.length - 1; i >= 0; i--) {
+        const table_request = Context.data.cash_request_table_approver![i]
+        if (table_request.approve) {
+            const request = await table_request.daily_payment_request!.fetch()
+            await request.setStatus(Application.fields.__status.variants.payment_approved)
+            Context.data.approved_request_users!.unshift(table_request.payment_request_initiator)
+        }
+        if (table_request.refused) {
+            const request = await table_request.daily_payment_request!.fetch()
+            await request.setStatus(Application.fields.__status.variants.payment_refused)
+            Context.data.refused_request_users!.unshift(table_request.payment_request_initiator)
+        }
+    }
+    for (let i = Context.data.payment_request_table_approver!.length - 1; i >= 0; i--) {
+        const table_request = Context.data.payment_request_table_approver![i]
+        if (table_request.approve) {
+            const request = await table_request.daily_payment_request!.fetch()
+            await request.setStatus(Application.fields.__status.variants.payment_approved)
+            Context.data.approved_request_users!.unshift(table_request.payment_request_initiator)
+        }
+        if (table_request.refused) {
+            const request = await table_request.daily_payment_request!.fetch()
+            await request.setStatus(Application.fields.__status.variants.payment_refused)
+            Context.data.refused_request_users!.unshift(table_request.payment_request_initiator)
+        }
+    }
+}
+
+// Таблица бухгалтера - Занесение утверждённых заявок
+async function accountant_table_input(): Promise<void> {
+    // Запрос всех заказов с состоянием 'payment_approved' и не удаленных (null __deletedAt)
+    const all_orders = await Application.search()
+        .size(10000)
+        .where((f, g) => g.and(f.__status.eq(Application.fields.__status.variants.payment_approved), f.__deletedAt.eq(null)))
+        .all();
+
+    // Перебор всех заказов в обратном порядке (от последнего к первому)
+    for (let i = all_orders.length - 1; i >= 0; i--) {
+        const order = all_orders[i];
+
+        // Создаем запись в таблице payment_request_table_accountant для каждого заказа
+        const payment_request_table = Context.data.payment_request_table_accountant!.insert();
+        payment_request_table.daily_payment_request = order;
+        payment_request_table.currency_of_payment = order.data.currency_of_payment!;
+        payment_request_table.sum_of_payment = order.data.sum_of_payment!;
+        payment_request_table.payment_desired_date = order.data.payment_desired_date!;
+        payment_request_table.payment_request_comment = order.data.payment_request_comment!;
+        payment_request_table.payment_request_initiator = order.data.__createdBy;
+        payment_request_table.payment_reason_file = order.data.payment_reason_file!;
+        payment_request_table.contract = order.data.contract!;
+        payment_request_table.payee_partner = order.data.payee_partner!;
+    }
+}
+
+// Заявки на оплату - Поиск утвержденных
+async function search_for_approved_requests(): Promise<boolean> {
+    const approved_requests_amount = await Application.search().where((f, g) => g.and(f.__status.eq(Application.fields.__status.variants.payment_approved), f.__deletedAt.eq(null))).count()
+    if (approved_requests_amount > 0) return true
+    else return false
+}
+
+// Cобытие "Ежедневный платеж" - Создание
+async function create_daily_payment(): Promise<void> {
+    const app = Context.fields.daily_payment.app.create()
+    app.data.__participants = Context.data.daily_payment_users
+    app.data.__startAt = Context.data.daily_payment_start
+    app.data.__endAt = Context.data.daily_payment_end
+    // app.data.cash_request_table = Context.data.cash_request_table_accountant
+    app.data.payment_request_table = Context.data.payment_request_table_accountant
+    await app.save()
+    Context.data.daily_payment = app
+}
+
+// Cобытие "Ежедневный платеж" - Изменение элемента
+async function edit_daily_payment(): Promise<void> {
+    const app = await Context.data.daily_payment!.fetch()
+    // app.data.cash_request_table = Context.data.cash_request_table
+    app.data.payment_request_table = Context.data.payment_request_table
+    await app.save()
+}
+
+// Заявки на оплату - Статус "Оплачено"
+async function change_payout_statuses(): Promise<void> {
+    for (let i = Context.data.cash_request_table_accountant!.length - 1; i >= 0; i--) {
+        const table_request = Context.data.cash_request_table_accountant![i]
+        if (table_request.paid) {
+            const request = await table_request.daily_payment_request!.fetch()
+            await request.setStatus(Application.fields.__status.variants.paid)
+            Context.data.paid_request_users!.unshift(table_request.payment_request_initiator)
+        }
+    }
+    for (let i = Context.data.payment_request_table_accountant!.length - 1; i >= 0; i--) {
+        const table_request = Context.data.payment_request_table_accountant![i]
+        if (table_request.paid) {
+            const request = await table_request.daily_payment_request!.fetch()
+            await request.setStatus(Application.fields.__status.variants.paid)
+            Context.data.paid_request_users!.unshift(table_request.payment_request_initiator)
+        }
+    }
+}
+
+// Таблица события - Занесение оплаченных заявок
+async function daily_payment_table_input(): Promise<void> {
+    const old_cash_request_table = Context.data.cash_request_table_accountant
+    const old_payment_request_table = Context.data.payment_request_table_accountant
+    for (let i = old_cash_request_table!.length - 1; i >= 0; i--) {
+        if (old_cash_request_table![i].paid) {
+            const new_cash_request_table = Context.data.cash_request_table!.insert()
+            new_cash_request_table.daily_payment_request = old_cash_request_table![i].daily_payment_request
+            new_cash_request_table.payment_amount = old_cash_request_table![i].payment_amount
+            new_cash_request_table.payment_desired_date = old_cash_request_table![i].payment_desired_date
+            new_cash_request_table.payment_request_comment = old_cash_request_table![i].payment_request_comment
+            new_cash_request_table.payment_request_initiator = old_cash_request_table![i].payment_request_initiator
+            // new_cash_request_table.payment_type = old_cash_request_table![i].payment_type
+        }
+    }
+    for (let i = old_payment_request_table!.length - 1; i >= 0; i--) {
+        if (old_payment_request_table![i].paid) {
+            const new_payment_request_table = Context.data.payment_request_table!.insert()
+            new_payment_request_table.daily_payment_request = old_payment_request_table![i].daily_payment_request
+            new_payment_request_table.sum_of_payment = old_payment_request_table![i].sum_of_payment
+            new_payment_request_table.currency_of_payment = old_payment_request_table![i].currency_of_payment
+            new_payment_request_table.payment_desired_date = old_payment_request_table![i].payment_desired_date
+            new_payment_request_table.payment_request_comment = old_payment_request_table![i].payment_request_comment
+            new_payment_request_table.payment_request_initiator = old_payment_request_table![i].payment_request_initiator
+        }
+    }
+}
+
+// Заявки на оплату - Установить статус заявок "Утверждение"
+async function change_status_to_approval(): Promise<void> {
+    const approverTable = Context.data.payment_request_table_approver!;
+
+    for (const approverEntry of approverTable) {
+        try {
+            // Получение связанной заявки
+            const paymentRequest = await approverEntry.daily_payment_request!.fetch();
+            // Установка статуса "approver"
+            await paymentRequest.setStatus(Application.fields.__status.variants.approver);
+        } catch {
+            // Ошибка игнорируется, чтобы не прерывать обработку остальных записей
+        }
+    }
+}
+
+// Функция для присвоения Пользователей из Групп и ролей в Зоны отвественности бизнес-процесса
+async function getUsersFromGroup(): Promise<void> {
+    if (Context.data.company_a === true) {
+        const groupPaymentApprover = await System.userGroups.search()
+            .where(f => f.__name.eq('Утверждающий_A'))
+            .first();
+        Context.data.payment_approver = await groupPaymentApprover?.users();
+    } else {
+        if (Context.data.company_b === true) {
+            const groupPaymentApprover = await System.userGroups.search()
+                .where(f => f.__name.eq('Утверждающий_B'))
+                .first();
+            Context.data.payment_approver = await groupPaymentApprover?.users();
+        } else {
+            if (Context.data.company_c === true) {
+                const groupPaymentApprover = await System.userGroups.search()
+                    .where(f => f.__name.eq('Утверждающий_C'))
+                    .first();
+                Context.data.payment_approver = await groupPaymentApprover?.users();
+            }
+        }
+    }
+
+    // Запись пользователей для рассылки на случай отмены
+    Context.data.cancelation_mail_list = Context.data.payment_approver ?? [];
+}
