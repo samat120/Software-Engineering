@@ -40,17 +40,19 @@ async function define_daily_payment_parameters(): Promise<void> {
     }
 }
 
+// Таблица утверждающего - Занесение заявок 
 async function approver_table_input(): Promise<void> {
-  // Запрос всех заказов с состоянием "approver" и не удаленных (null _deletedAt)
-  const all_orders = await Application.search()
-    .size(10000)
-    .where((f, g) => g.or(
-      f._status.eq(Application.fields._status.variants.approved),
-      f._status.eq(Application.fields._status.variants.approver)
-    )
-    .and(f._deletedAt.eq(null))
-    )
-    .all();
+    // Запрос всех заказов с состоянием 'approver' и не удаленных (null __deletedAt)
+    const all_orders = await Application.search()
+        .size(10000)
+        .where((f, g) => g.and(
+                g.or(
+                    f.__status.eq(Application.fields.__status.variants.approved), 
+                    f.__status.eq(Application.fields.__status.variants.approver)
+                ),
+                f.__deletedAt.eq(null)
+            ))
+        .all();
 
   // Перебор всех заказов в обратном порядке (от последнего к первому)
   for (let i = all_orders.length - 1; i >= 0; i--) {
@@ -82,18 +84,18 @@ async function approver_table_input(): Promise<void> {
     }
     
     // Создаем запись в таблице payment_request_table_approver для отобранного заказа
-    const payment_request_table = Context.data.payment_request_table_approver.insert();
+    const payment_request_table = Context.data.payment_request_table_approver!.insert();
     
     // Заполняем поля записи данными из заказа
     payment_request_table.daily_payment_request = order;
-    payment_request_table.currency_of_payment = order.data.currency_of_payment;
-    payment_request_table.sum_of_payment = order.data.sum_of_payment;
-    payment_request_table.payment_desired_date = order.data.payment_desired_date;
-    payment_request_table.payment_request_comment = order.data.payment_request_comment;
+    payment_request_table.currency_of_payment = order.data.currency_of_payment!;
+    payment_request_table.sum_of_payment = order.data.sum_of_payment!;
+    payment_request_table.payment_desired_date = order.data.payment_desired_date!;
+    payment_request_table.payment_request_comment = order.data.payment_request_comment!;
     payment_request_table.payment_request_initiator = order.data._createdBy;
-    payment_request_table.payment_reason_file = order.data.payment_reason_file;
-    payment_request_table.contract = order.data.contract;
-    payment_request_table.payee_partner_fix = order.data.payee_partner;
+    payment_request_table.payment_reason_file = order.data.payment_reason_file!;
+    payment_request_table.contract = order.data.contract!;
+    payment_request_table.payee_partner_fix = order.data.payee_partner!;
   }
 }
 
