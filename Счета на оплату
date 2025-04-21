@@ -40,36 +40,57 @@ async function define_daily_payment_parameters(): Promise<void> {
     }
 }
 
-// Таблица утверждающего - Занесение заявок 
+// Improved version of approver_table_input function
 async function approver_table_input(): Promise<void> {
-    // Запрос всех заказов с состоянием 'approver' и не удаленных (null __deletedAt)
-    const all_orders = await Application.search()
-        .size(10000)
-        .where((f, g) => g.and(
-                g.or(
-                    f.__status.eq(Application.fields.__status.variants.approved), 
-                    f.__status.eq(Application.fields.__status.variants.approver)
-                ),
-                f.__deletedAt.eq(null)
-            ))
-        .all();
+  // Fetch orders with "approver" status and not deleted
+  const all_orders = await Application.search()
+    .size(10000) // Consider pagination instead of large size
+    .where((f, g) => 
+      g.or(
+        f._status.eq(Application.fields._status.variants.approved),
+        f._status.eq(Application.fields._status.variants.approver)
+      )
+      .and(f._deletedAt.eq(null))
+    )
+    .all();
 
-    // Перебор всех заказов в обратном порядке (от последнего к первому)
-    for (let i = all_orders.length - 1; i >= 0; i--) {
-        const order = all_orders[i];
-
-        // Создаем запись в таблице payment_request_table_approver для каждого заказа
-        const payment_request_table = Context.data.payment_request_table_approver!.insert();
-        payment_request_table.daily_payment_request = order;
-        payment_request_table.currency_of_payment = order.data.currency_of_payment!;
-        payment_request_table.sum_of_payment = order.data.sum_of_payment!;
-        payment_request_table.payment_desired_date = order.data.payment_desired_date!;
-        payment_request_table.payment_request_comment = order.data.payment_request_comment!;
-        payment_request_table.payment_request_initiator = order.data.__createdBy;
-        payment_request_table.payment_reason_file = order.data.payment_reason_file!;
-        payment_request_table.contract = order.data.contract!;
-        payment_request_table.payee_partner_fix = order.data.payee_partner!;
+  // Process orders in reverse order (newest to oldest)
+  for (let i = all_orders.length - 1; i >= 0; i--) {
+    const order = all_orders[i];
+    const companyObject = await order.data.company?.fetch();
+    
+    // Simplified company check using a more maintainable approach
+    const companyConfig = {
+      company_a: "ITS Ltd.",
+      company_b: "ITS Tech Ltd.",
+      company_c: "ITS CSD Ltd."
+    };
+    
+    // Check if this is a company we should process
+    let shouldProcess = false;
+    for (const [key, companyName] of Object.entries(companyConfig)) {
+      if (Context.data[key] === true && companyObject?.fields.__name.name === companyName) {
+        shouldProcess = true;
+        break;
+      }
     }
+    
+    if (!shouldProcess) continue;
+
+    // Create a payment request record
+    const payment_request_table = Context.data.payment_request_table_approver.insert();
+    
+    // Set payment request properties
+    payment_request_table.daily_payment_request = order;
+    payment_request_table.currency_of_payment = order.data.currency_of_payment;
+    payment_request_table.sum_of_payment = order.data.sum_of_payment;
+    payment_request_table.payment_desired_date = order.data.payment_desired_date;
+    payment_request_table.payment_request_comment = order.data.payment_request_comment;
+    payment_request_table.payment_request_initiator = order.data._createdBy;
+    payment_request_table.payment_reason_file = order.data.payment_reason_file;
+    payment_request_table.contract = order.data.contract;
+    payment_request_table.payee_partner_fix = order.data.payee_partner;
+  }
 }
 
 // Заявки на оплату - Смена статусов
