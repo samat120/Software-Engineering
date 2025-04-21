@@ -40,47 +40,51 @@ async function define_daily_payment_parameters(): Promise<void> {
     }
 }
 
-// Improved version of approver_table_input function
 async function approver_table_input(): Promise<void> {
-  // Fetch orders with "approver" status and not deleted
+  // Запрос всех заказов с состоянием "approver" и не удаленных (null _deletedAt)
   const all_orders = await Application.search()
-    .size(10000) // Consider pagination instead of large size
-    .where((f, g) => 
-      g.or(
-        f._status.eq(Application.fields._status.variants.approved),
-        f._status.eq(Application.fields._status.variants.approver)
-      )
-      .and(f._deletedAt.eq(null))
+    .size(10000)
+    .where((f, g) => g.or(
+      f._status.eq(Application.fields._status.variants.approved),
+      f._status.eq(Application.fields._status.variants.approver)
+    )
+    .and(f._deletedAt.eq(null))
     )
     .all();
 
-  // Process orders in reverse order (newest to oldest)
+  // Перебор всех заказов в обратном порядке (от последнего к первому)
   for (let i = all_orders.length - 1; i >= 0; i--) {
     const order = all_orders[i];
+    
+    // Получаем данные о компании
     const companyObject = await order.data.company?.fetch();
+    const companyName = companyObject?.fields.__name.name;
     
-    // Simplified company check using a more maintainable approach
-    const companyConfig = {
-      company_a: "ITS Ltd.",
-      company_b: "ITS Tech Ltd.",
-      company_c: "ITS CSD Ltd."
-    };
+    // Проверяем соответствие компании выбранным фильтрам
+    let isCompanySelected = false;
     
-    // Check if this is a company we should process
-    let shouldProcess = false;
-    for (const [key, companyName] of Object.entries(companyConfig)) {
-      if (Context.data[key] === true && companyObject?.fields.__name.name === companyName) {
-        shouldProcess = true;
-        break;
-      }
+    // Проверка для company_a
+    if (Context.data.company_a === true && companyName === "ITS Ltd.") {
+      isCompanySelected = true;
+    } 
+    // Проверка для company_b
+    else if (Context.data.company_b === true && companyName === "ITS Tech Ltd.") {
+      isCompanySelected = true;
+    }
+    // Проверка для company_c
+    else if (Context.data.company_c === true && companyName === "ITS CSD Ltd.") {
+      isCompanySelected = true;
     }
     
-    if (!shouldProcess) continue;
-
-    // Create a payment request record
+    // Если компания не соответствует фильтрам, пропускаем заказ
+    if (!isCompanySelected) {
+      continue;
+    }
+    
+    // Создаем запись в таблице payment_request_table_approver для отобранного заказа
     const payment_request_table = Context.data.payment_request_table_approver.insert();
     
-    // Set payment request properties
+    // Заполняем поля записи данными из заказа
     payment_request_table.daily_payment_request = order;
     payment_request_table.currency_of_payment = order.data.currency_of_payment;
     payment_request_table.sum_of_payment = order.data.sum_of_payment;
