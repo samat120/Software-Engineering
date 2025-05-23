@@ -1,0 +1,33 @@
+async function onChange(): Promise<void> {
+    const contract = await Context.data.contract_name!.fetch();
+
+    // Отладка
+    console.log("deal_affiliation =", contract.data.deal_affiliation);
+    console.log("deal_company_out =", contract.data.deal_company_out);
+    console.log("deal_company_in =", contract.data.deal_company_in);
+
+    const deal_client = await contract.data.deal_client!.fetch();
+    Context.data.client = deal_client.data.__name;
+
+    const isAffiliated = !!contract.data.deal_affiliation;
+
+    if (isAffiliated) {
+        const deal_company_in_refs = contract.data.deal_company_in;
+        if (deal_company_in_refs && deal_company_in_refs.length > 0) {
+            const deal_company_in = await deal_company_in_refs[0].fetch();
+            console.log("Исполнитель (внут.):", deal_company_in.data.__name);
+            Context.data.contractor = deal_company_in.data.__name;
+        } else {
+            console.log("deal_company_out_refs is empty");
+        }
+    } else {
+        const deal_company_out_refs = contract.data.deal_company_out;
+        if (deal_company_out_refs && deal_company_out_refs.length > 0) {
+            const deal_company_out = await deal_company_out_refs[0].fetch();
+            console.log("Исполнитель (внеш.):", deal_company_out.data.__name);
+            Context.data.contractor = deal_company_out.data.__name;
+        } else {
+            console.log("deal_company_in_refs is empty");
+        }
+    }
+}
