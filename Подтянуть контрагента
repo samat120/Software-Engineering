@@ -1,36 +1,60 @@
 async function onChange(): Promise<void> {
+  // Проверка: если поле contract_name не заполнено — выходим
   if (!Context.data.contract_name) {
     return;
   }
 
+  // Загружаем объект договора по ссылке
   const contract = await Context.data.contract_name.fetch();
 
+  // Проверка: если в договоре не указан клиент (deal_client) — выходим
   if (!contract.data.deal_client) {
     return;
   }
 
+  // Загружаем объект клиента по ссылке и сохраняем его имя в поле client
   const deal_client = await contract.data.deal_client.fetch();
   Context.data.client = deal_client.data.__name;
 
+  // Проверяем, является ли сделка аффилированной
   const isAffiliated = !!contract.data.deal_affiliation;
 
   if (isAffiliated) {
+    // Если аффилированная — берём список внутренних компаний
     const deal_company_in_refs = contract.data.deal_company_in;
+
     if (deal_company_in_refs && deal_company_in_refs.length > 0) {
+      // Загружаем все компании по ссылкам
       const allDealCompanyIn = await Promise.all(
         deal_company_in_refs.map(ref => ref.fetch())
       );
+
+      // Собираем названия компаний и записываем в поле contractor
       const names = allDealCompanyIn.map(item => item.data.__name);
       Context.data.contractor = names.join(", ");
+
+      // Собираем ИНН компаний и записываем в поле identification_number
+      const inns = allDealCompanyIn.map(item => item.data._inn);
+      Context.data.identification_number = inns.join(", ");
     }
+
   } else {
+    // Если не аффилированная — берём список внешних компаний
     const deal_company_out_refs = contract.data.deal_company_out;
+
     if (deal_company_out_refs && deal_company_out_refs.length > 0) {
+      // Загружаем все компании по ссылкам
       const allDealCompanyOut = await Promise.all(
         deal_company_out_refs.map(ref => ref.fetch())
       );
+
+      // Собираем названия компаний и записываем в поле contractor
       const names = allDealCompanyOut.map(item => item.data.__name);
       Context.data.contractor = names.join(", ");
+
+      // Собираем ИНН компаний и записываем в поле identification_number
+      const inns = allDealCompanyOut.map(item => item.data._inn);
+      Context.data.identification_number = inns.join(", ");
     }
   }
 }
