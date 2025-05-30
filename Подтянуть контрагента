@@ -1,36 +1,28 @@
 async function onChange(): Promise<void> {
-  if (!Context.data.contract_name) {
-    return;
-  }
+  const contractRef = Context.data.contract_name;
+  if (!contractRef) return;
 
-  const contract = await Context.data.contract_name.fetch();
+  const contract = await contractRef.fetch();
+  const { deal_client, deal_affiliation, deal_company_in, deal_company_out } = contract.data;
 
-  if (!contract.data.deal_client) {
-    return;
-  }
+  if (!deal_client) return;
 
-  const deal_client = await contract.data.deal_client.fetch();
-  Context.data.client = deal_client.data.__name;
+  const client = await deal_client.fetch();
+  Context.data.client = client.data.__name;
 
-  const isAffiliated = !!contract.data.deal_affiliation;
+  const isAffiliated = !!deal_affiliation;
+  const companyRefs = isAffiliated ? deal_company_in : deal_company_out;
 
-  if (isAffiliated) {
-    const deal_company_in_refs = contract.data.deal_company_in;
-    if (deal_company_in_refs && deal_company_in_refs.length > 0) {
-      const allDealCompanyIn = await Promise.all(
-        deal_company_in_refs.map(ref => ref.fetch())
-      );
-      const names = allDealCompanyIn.map(item => item.data.__name);
-      Context.data.contractor = names.join(", ");
-    }
-  } else {
-    const deal_company_out_refs = contract.data.deal_company_out;
-    if (deal_company_out_refs && deal_company_out_refs.length > 0) {
-      const allDealCompanyOut = await Promise.all(
-        deal_company_out_refs.map(ref => ref.fetch())
-      );
-      const names = allDealCompanyOut.map(item => item.data.__name);
-      Context.data.contractor = names.join(", ");
-    }
+  if (companyRefs && companyRefs.length > 0) {
+    const companies = await Promise.all(companyRefs.map(ref => ref.fetch()));
+    const names = companies.map(c => c.data.__name);
+    
+    // Use correct INN field based on affiliation
+    const inns = companies.map(c =>
+      isAffiliated ? c.data._inn : c.data.identification_number
+    );
+
+    Context.data.contractor = names.join(", ");
+    Context.data.identification_number = inns.filter(Boolean).join(", ");
   }
 }
