@@ -17,12 +17,13 @@ async function onChange(): Promise<void> {
     const companies = await Promise.all(companyRefs.map(ref => ref.fetch()));
     const names = companies.map(c => c.data.__name);
     
-    // Use correct INN field based on affiliation
-    const inns = companies.map(c =>
-      isAffiliated ? c.data._inn : c.data.identification_number
-    );
+    const innsFormatted = companies.map(c => {
+      const name = c.data.__name;
+      const inn = isAffiliated ? c.data._inn : c.data.identification_number;
+      return `${name} - ${inn}`;
+    });
 
     Context.data.contractor = names.join(", ");
-    Context.data.identification_number = inns.filter(Boolean).join(", ");
+    Context.data.identification_number = innsFormatted.filter(Boolean).join(", ");
   }
 }
