@@ -17,13 +17,15 @@ async function onContractChange(): Promise<void> {
     const companies = await Promise.all(companyRefs.map(ref => ref.fetch()));
     const names = companies.map(c => c.data.__name);
     
-    const innsFormatted = companies.map(c => {
-      const name = c.data.__name;
-      const inn = isAffiliated ? c.data._inn : c.data.identification_number;
-      return `${name} - ${inn}`;
-    });
+    // Only include entries where INN exists
+    const innsFormatted = companies
+      .map(c => {
+        const inn = isAffiliated ? c.data._inn : c.data.identification_number;
+        return inn ? `${c.data.__name} - ${inn}` : null;
+      })
+      .filter(Boolean); // Remove null entries
 
     Context.data.contractor = names.join(", ");
-    Context.data.identification_number = innsFormatted.filter(Boolean).join(", ");
+    Context.data.identification_number = innsFormatted.join(", ");
   }
 }
