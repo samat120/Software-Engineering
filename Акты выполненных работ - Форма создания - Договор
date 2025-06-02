@@ -1,4 +1,4 @@
-async function onChange(): Promise<void> {
+async function onContractChange(): Promise<void> {
   const contractRef = Context.data.contract_name;
   if (!contractRef) return;
 
