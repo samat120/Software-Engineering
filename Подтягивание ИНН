@@ -1,4 +1,0 @@
-async function OnChanage(): Promise<void> {
-    const inn = await Context.data.company_name!.fetch();
-    Context.data.inn = inn.data._inn;
-}

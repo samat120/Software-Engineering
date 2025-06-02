@@ -1,0 +1,5 @@
+// Подстановка ИНН в поле "ИНН" из поля "Контрагент"
+async function onChange(): Promise<void> {
+    const company_object = await Context.data.payee_partner!.fetch();
+    Context.data.individual_number = company_object.data._inn;
+}
