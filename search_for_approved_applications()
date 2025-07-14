@@ -1,0 +1,9 @@
+// Шлюз "ИЛИ/ИЛИ": Утвержденные заявки есть?
+async function search_for_approved_applications(): Promise<boolean> {
+    const approved_requests_amount = await Application.search()
+        .where((f, g) => g.and(
+            f.__status.eq(Application.fields.__status.variants.in_execution),
+            f.__deletedAt.eq(null))).count()
+    if (approved_requests_amount > 0) return true
+    else return false
+}
