@@ -1,0 +1,14 @@
+// Шлюз "ИЛИ/ИЛИ": "Новые заявки есть?"
+async function search_for_pre_approved_applications(): Promise<boolean> {
+    const orders_amount = await Application.search()
+        .where((f, g) => g.and(
+            g.or(
+                f.__status.eq(Application.fields.__status.variants.pre_approved),
+                f.__status.eq(Application.fields.__status.variants.final_approval)
+            ),
+            f.__deletedAt.eq(null)
+        ))
+        .count();
+
+    return orders_amount > 0;
+}
