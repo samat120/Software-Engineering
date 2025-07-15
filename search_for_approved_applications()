@@ -1,25 +1,12 @@
-// Шлюз "ИЛИ/ИЛИ": Утвержденные заявки есть?
 async function search_for_approved_applications(): Promise<boolean> {
-    if (Context.data.company_a === true) {
-       let company = await Context.fields.company.app.search().where(f => f.company_a.eq(true)).first();
-       Context.data.company = company;
-    }
-    if (Context.data.company_b === true) {
-       let company = await Context.fields.company.app.search().where(f => f.company_b.eq(true)).first();
-       Context.data.company = company;
-    }
-    if (Context.data.company_c === true) {
-       let company = await Context.fields.company.app.search().where(f => f.company_c.eq(true)).first();
-       Context.data.company = company;
-    }
-        
-        const approved_requests_amount = await Application.search()
-            .where((f, g) => g.and(
-                f.__status.eq(Application.fields.__status.variants.in_execution),
-                f.__deletedAt.eq(null),
-                f.company.link(Context.data.company!)
-                )).count()
-                
-        if (approved_requests_amount > 0) return true
-        else return false
+    await resolveCompany();
+    const approved_requests_amount = await Application.search()
+        .where((f, g) => g.and(
+            f.__status.eq(Application.fields.__status.variants.in_execution),
+            f.__deletedAt.eq(null),
+            f.company.link(Context.data.company!)
+            )).count()
+            
+    if (approved_requests_amount > 0) return true
+    else return false
 }
